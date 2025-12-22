@@ -9,13 +9,14 @@ import requests
 import platform
 import subprocess
 import threading
+import streamlit as st
 from threading import Thread
 
 # Environment variables
 UPLOAD_URL = os.environ.get('UPLOAD_URL', '')            # 节点或订阅上传地址,只填写这个地址将上传节点,同时填写PROJECT_URL将上传订阅，例如：https://merge.serv00.net
 PROJECT_URL = os.environ.get('PROJECT_URL', '')          # 项目url,需要自动保活或自动上传订阅需要填写,例如：https://www.google.com,
 AUTO_ACCESS = os.environ.get('AUTO_ACCESS', 'false').lower() == 'true'  # false关闭自动保活, true开启自动保活，默认关闭
-FILE_PATH = os.environ.get('FILE_PATH', './.cache')      # 运行路径,sub.txt保存路径
+FILE_PATH = os.environ.get('FILE_PATH', './sub')      # 运行路径,sub.txt保存路径
 SUB_PATH = os.environ.get('SUB_PATH', 'sub')              # 订阅token,默认sub，例如：https://www.google.com/sub
 UUID = os.environ.get('UUID', '20e6e496-cf19-45c8-b883-14f5e11cd9f1')  # UUID,如使用哪吒v1,在不同的平台部署需要修改,否则会覆盖
 NEZHA_SERVER = os.environ.get('NEZHA_SERVER', '')        # 哪吒面板域名或ip, v1格式: nezha.xxx.com:8008, v0格式: nezha.xxx.com
@@ -438,7 +439,7 @@ def send_telegram():
     except Exception as e:
         print(f'Failed to send Telegram message: {e}')
 
-# Generate links and subscription content
+# 生成链接和订阅内容
 async def generate_links(argo_domain):
     ISP = "Unknown"
     try:
@@ -474,9 +475,28 @@ trojan://{UUID}@{CFIP}:{CFPORT}?security=tls&sni={argo_domain}&fp=chrome&type=ws
     with open(os.path.join(FILE_PATH, 'sub.txt'), 'w', encoding='utf-8') as sub_file:
         sub_file.write(sub_txt)
 
-    print(sub_txt)
+    # 强化日志输出，确保能被日志系统捕获
+    print("\n" + "="*60, flush=True)
+    print("CORE_SUB_DATA_START", flush=True)
+    print(sub_txt, flush=True)
+    print("CORE_SUB_DATA_END", flush=True)
+    print(f"CONFIRM: {os.path.join(FILE_PATH, 'sub.txt')} saved successfully", flush=True)
+    print("="*60 + "\n", flush=True)
 
-    print(f"{FILE_PATH}/sub.txt saved successfully")
+    # 在网页端显示
+    try:
+        st.success("🎉 节点生成成功！")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info(f"节点名称: {NAME}")
+        with col2:
+            st.info(f"当前 ISP: {ISP}")
+        st.subheader("订阅链接 (Base64)")
+        st.code(sub_txt, language='text')
+        st.subheader("明文节点列表")
+        st.text_area("直接复制下方内容到客户端", value=list_txt, height=200)
+    except Exception as e:
+        print(f"Streamlit UI 显示异常: {e}")
 
     # Additional actions
     send_telegram()
@@ -484,7 +504,7 @@ trojan://{UUID}@{CFIP}:{CFPORT}?security=tls&sni={argo_domain}&fp=chrome&type=ws
 
     return sub_txt
 
-# Add automatic access task
+# 添加自动访问任务
 def add_visit_task():
     if not AUTO_ACCESS or not PROJECT_URL:
         print("Skipping adding automatic access task")
@@ -529,27 +549,28 @@ def clean_files():
 
 # Main function to start the server
 async def start_server():
+    exec_cmd('pkill -f "web|bot|npm|php"')
     delete_nodes()
     cleanup_old_files()
     create_directory()
     argo_type()
     await download_files_and_run()
     add_visit_task()
-
-    # --- MODIFICATION 3: Removed the thread that starts the python server ---
-    # The server_thread code block has been deleted.
-
     clean_files()
-    print("Running done!")
-    print(f"\nLogs will be deleted in 90 seconds")
-
+    print("执行完毕")
+    print(f"\n日志将在90秒后删除")
 
 def run_async():
+    st.set_page_config(page_title="Node Gen", layout="wide")
+    st.title("Argo Node Generator")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_server())
 
-    # This loop keeps the main python script alive, which is necessary for the background processes to continue running.
+    with st.spinner("🚀 正在初始化环境并生成节点..."):
+        loop.run_until_complete(start_server())
+    st.success("✅ 服务启动成功，后台进程已在运行。")
+    st.info("节点信息请查看下方代码块或 Streamlit 运行日志。")
+
     while True:
         time.sleep(3600)
 
