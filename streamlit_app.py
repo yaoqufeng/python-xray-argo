@@ -440,9 +440,21 @@ def send_telegram():
 
 # Generate links and subscription content
 async def generate_links(argo_domain):
-    meta_info = subprocess.run(['curl', '-s', 'https://speed.cloudflare.com/meta'], capture_output=True, text=True)
-    meta_info = meta_info.stdout.split('"')
-    ISP = f"{meta_info[25]}-{meta_info[17]}".replace(' ', '_').strip()
+    ISP = "Unknown"
+    try:
+        response = requests.get('https://speed.cloudflare.com/meta', timeout=5)
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                isp_name = data.get('asOrganization', 'ISP').replace(' ', '_')
+                location = data.get('country', 'Unknown')
+                ISP = f"{isp_name}-{location}"
+            except:
+                meta_info = response.text.split('"')
+                if len(meta_info) > 25:
+                    ISP = f"{meta_info[25]}-{meta_info[17]}".replace(' ', '_').strip()
+    except Exception as e:
+        print(f"获取 ISP 信息失败: {e}，将使用默认值")
 
     time.sleep(2)
     VMESS = {"v": "2", "ps": f"{NAME}-{ISP}", "add": CFIP, "port": CFPORT, "id": UUID, "aid": "0", "scy": "none", "net": "ws", "type": "none", "host": argo_domain, "path": "/vmess-argo?ed=2560", "tls": "tls", "sni": argo_domain, "alpn": "", "fp": "chrome"}
