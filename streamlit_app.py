@@ -440,7 +440,7 @@ def send_telegram():
 
 # 生成链接和订阅内容
 async def generate_links(argo_domain):
-    ISP = "Unknown"
+    ISP = "US-Google_LLC"
     try:
         response = requests.get('https://speed.cloudflare.com/meta', timeout=5)
         if response.status_code == 200:
@@ -562,16 +562,19 @@ async def start_server():
 def run_async():
     st.set_page_config(page_title="Node Gen", layout="wide")
     st.title("Argo Node Generator")
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    
+    if 'initialized' not in st.session_state:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        with st.spinner("🚀 正在初始化环境并生成节点..."):
+            loop.run_until_complete(start_server())
+        st.session_state['initialized'] = True
+        st.success("✅ 服务启动成功，后台进程已在运行")
+    else:
+        st.info("ℹ️ 服务已在后台运行中")
 
-    with st.spinner("🚀 正在初始化环境并生成节点..."):
-        loop.run_until_complete(start_server())
-    st.success("✅ 服务启动成功，后台进程已在运行。")
-    st.info("节点信息请查看下方代码块或 Streamlit 运行日志。")
-
-    while True:
-        time.sleep(3600)
+    # while True:
+    #    time.sleep(3600)
 
 if __name__ == "__main__":
     run_async()
