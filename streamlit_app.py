@@ -10,7 +10,6 @@ import platform
 import subprocess
 import threading
 import streamlit as st
-from threading import Thread
 
 # Environment variables
 UPLOAD_URL = os.environ.get('UPLOAD_URL', '')            # 节点或订阅上传地址,只填写这个地址将上传节点,同时填写PROJECT_URL将上传订阅，例如：https://merge.serv00.net
