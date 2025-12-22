@@ -53,7 +53,7 @@ class StreamlitAppWaker:
             raise
 
     def find_and_click_button(self, context="主页面"):
-        """带详细日志的按钮点击逻辑"""
+        """按钮点击逻辑"""
         logger.info(f"🔍 正在 [{context}] 搜索唤醒按钮...")
         
         button = None
@@ -76,11 +76,9 @@ class StreamlitAppWaker:
         if button:
             logger.info(f"🎯 命中按钮 (策略: {strategy})，准备执行点击...")
             try:
-                # 尝试标准点击
                 button.click()
                 logger.info(f"直接点击成功")
             except Exception:
-                # 兜底：JS 点击
                 logger.warning(f"⚠️ 直接点击受阻，切换为 JavaScript 点击模式")
                 self.driver.execute_script("arguments[0].click();", button)
             return True
@@ -105,10 +103,8 @@ class StreamlitAppWaker:
         self.driver.switch_to.default_content()
         
         def is_gone():
-            # 检查主页面
-            if self.driver.find_elements(By.CSS_SELECTOR, self.TEST_ID_SELECTOR): return False
-            # 检查 Iframe
-            iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
+            if self.driver.find_elements(By.CSS_SELECTOR, self.TEST_ID_SELECTOR): return False # 检查主页面
+            iframes = self.driver.find_elements(By.TAG_NAME, "iframe") # 检查 Iframe
             for i in range(len(iframes)):
                 try:
                     self.driver.switch_to.frame(i)
@@ -119,7 +115,6 @@ class StreamlitAppWaker:
                     self.driver.switch_to.default_content()
             return True
 
-        # 给予短时间的缓冲确认
         for attempt in range(1, 6):
             if is_gone():
                 logger.info(f"✨ 验证通过：唤醒按钮已消失 (尝试第 {attempt} 次确认)")
@@ -138,14 +133,14 @@ class StreamlitAppWaker:
         logger.info(f"⏳ 等待页面初步渲染 ({self.INITIAL_WAIT_TIME}s)...")
         time.sleep(self.INITIAL_WAIT_TIME)
 
-        # 1. 尝试主页面
+        # 尝试主页面
         if self.find_and_click_button("主页面"):
             logger.info("✅ 唤醒指令已发出")
         else:
-            # 2. 尝试 Iframe
+            # 尝试 Iframe
             logger.info("📂 主页面未找到按钮，开始探测嵌套 Iframe...")
             iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
-            logger.info(f"检测到 {len(iframes)} 个 iframe")
+            logger.info(f"🔍 检测到 {len(iframes)} 个 iframe")
             
             clicked = False
             for i, frame in enumerate(iframes):
@@ -164,7 +159,7 @@ class StreamlitAppWaker:
                 else:
                     raise Exception("无法找到唤醒入口，且应用仍处于不可用状态")
 
-        # 3. 结果确认
+        # 结果确认
         logger.info(f"🩺 正在最终验证唤醒结果...")
         if self.check_app_status():
             return True, "✅ 唤醒流程执行完毕，应用已恢复"
