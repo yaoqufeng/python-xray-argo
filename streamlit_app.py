@@ -11,23 +11,23 @@ import subprocess
 import threading
 
 # 环境变量
-UPLOAD_URL = os.environ.get('UPLOAD_URL', '')             # 节点或订阅上传地址
-PROJECT_URL = os.environ.get('PROJECT_URL', '')           # 项目url
-AUTO_ACCESS = os.environ.get('AUTO_ACCESS', 'false').lower() == 'true'
-FILE_PATH = os.environ.get('FILE_PATH', './sub')        # 运行路径
-SUB_PATH = os.environ.get('SUB_PATH', 'sub')              # 订阅token
-UUID = os.environ.get('UUID', '20e6e496-cf19-45c8-b883-14f5e11cd9f1')
-NEZHA_SERVER = os.environ.get('NEZHA_SERVER', '')        # 哪吒面板域名
-NEZHA_PORT = os.environ.get('NEZHA_PORT', '')            # 哪吒端口
-NEZHA_KEY = os.environ.get('NEZHA_KEY', '')              # 哪吒密钥
-ARGO_DOMAIN = os.environ.get('ARGO_DOMAIN', '')          # Argo固定域名
-ARGO_AUTH = os.environ.get('ARGO_AUTH', '')              # Argo密钥
-ARGO_PORT = int(os.environ.get('PORT', '8001'))
-CFIP = os.environ.get('CFIP', 'cf.877774.xyz')          # 优选ip
-CFPORT = int(os.environ.get('CFPORT', '443'))            # 优选端口
-NAME = os.environ.get('NAME', 'Stream')                  # 节点名称
-CHAT_ID = os.environ.get('CHAT_ID', '')                  # Telegram chat_id
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '')              # Telegram bot_token
+UPLOAD_URL = os.environ.get('UPLOAD_URL', '')                            # 节点或订阅上传地址
+PROJECT_URL = os.environ.get('PROJECT_URL', '')                          # 项目url
+AUTO_ACCESS = os.environ.get('AUTO_ACCESS', 'false').lower() == 'true'   # 保活
+FILE_PATH = os.environ.get('FILE_PATH', './sub')                         # 节点路径
+SUB_PATH = os.environ.get('SUB_PATH', 'sub')                             # 订阅token
+UUID = os.environ.get('UUID', '20e6e496-cf19-45c8-b883-14f5e11cd9f1')    # UUID
+NEZHA_SERVER = os.environ.get('NEZHA_SERVER', '')                        # 哪吒面板域名
+NEZHA_PORT = os.environ.get('NEZHA_PORT', '')                            # 哪吒端口
+NEZHA_KEY = os.environ.get('NEZHA_KEY', '')                              # 哪吒密钥
+ARGO_DOMAIN = os.environ.get('ARGO_DOMAIN', '')                          # Argo固定域名
+ARGO_AUTH = os.environ.get('ARGO_AUTH', '')                              # Argo密钥
+ARGO_PORT = int(os.environ.get('PORT', '8001'))                          # Argo监听端口
+CFIP = os.environ.get('CFIP', 'cf.090227.xyz')                           # 优选ip
+CFPORT = int(os.environ.get('CFPORT', '443'))                            # 优选端口
+NAME = os.environ.get('NAME', 'Stream')                                  # 节点名称
+CHAT_ID = os.environ.get('CHAT_ID', '')                                  # Telegram chat_id
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '')                              # Telegram bot_token
 
 # 创建运行目录
 def create_directory():
@@ -50,31 +50,19 @@ config_path = os.path.join(FILE_PATH, 'config.json')
 
 # 删除旧节点
 def delete_nodes():
+    if not UPLOAD_URL: return
+    if not os.path.exists(sub_path): return
     try:
-        if not UPLOAD_URL:
-            return
-        if not os.path.exists(sub_path):
-            return
-        try:
-            with open(sub_path, 'r') as file:
-                file_content = file.read()
-        except:
-            return None
-
+        with open(sub_path, 'r') as file:
+            file_content = file.read()
+        
+        # 解码并提取节点
         decoded = base64.b64decode(file_content).decode('utf-8')
-        nodes = [line for line in decoded.split('\n') if any(protocol in line for protocol in ['vless://', 'vmess://', 'trojan://', 'hysteria2://', 'tuic://'])]
-
-        if not nodes:
-            return
-        try:
-            requests.post(f"{UPLOAD_URL}/api/delete-nodes",
-                          data=json.dumps({"nodes": nodes}),
-                          headers={"Content-Type": "application/json"})
-        except:
-            return None
+        nodes = [line for line in decoded.split('\n') if any(p in line for p in ['vless://', 'vmess://', 'trojan://', 'hysteria2://', 'tuic://'])]
+        if not nodes: return
+        requests.post(f"{UPLOAD_URL}/api/delete-nodes", json={"nodes": nodes}, timeout=10)
     except Exception as e:
         print(f"删除节点时出错: {e}")
-        return None
 
 # 清理旧文件
 def cleanup_old_files():
@@ -117,26 +105,20 @@ def download_file(file_name, file_url):
 
 # 获取对应架构的文件列表
 def get_files_for_architecture(architecture):
-    if architecture == 'arm':
-        base_files = [
-            {"fileName": "web", "fileUrl": "https://arm64.ssss.nyc.mn/web"},
-            {"fileName": "bot", "fileUrl": "https://arm64.ssss.nyc.mn/2go"}
-        ]
-    else:
-        base_files = [
-            {"fileName": "web", "fileUrl": "https://amd64.ssss.nyc.mn/web"},
-            {"fileName": "bot", "fileUrl": "https://amd64.ssss.nyc.mn/2go"}
-        ]
+    base_url = "https://arm64.ssss.nyc.mn" if architecture == 'arm' else "https://amd64.ssss.nyc.mn"
+    
+    # 基础组件：web(核心), bot(隧道)
+    files = [
+        {"fileName": "web", "fileUrl": f"{base_url}/web"},
+        {"fileName": "bot", "fileUrl": f"{base_url}/2go"}
+    ]
 
+    # 按需添加哪吒组件
     if NEZHA_SERVER and NEZHA_KEY:
-        if NEZHA_PORT:
-            npm_url = "https://arm64.ssss.nyc.mn/agent" if architecture == 'arm' else "https://amd64.ssss.nyc.mn/agent"
-            base_files.insert(0, {"fileName": "npm", "fileUrl": npm_url})
-        else:
-            php_url = "https://arm64.ssss.nyc.mn/v1" if architecture == 'arm' else "https://amd64.ssss.nyc.mn/v1"
-            base_files.insert(0, {"fileName": "php", "fileUrl": php_url})
+        name, path = ("npm", "agent") if NEZHA_PORT else ("php", "v1")
+        files.insert(0, {"fileName": name, "fileUrl": f"{base_url}/{path}"})
 
-    return base_files
+    return files
 
 # 授权文件执行权限
 def authorize_files(file_paths):
@@ -195,30 +177,19 @@ def exec_cmd(command):
 
 # 下载并运行必要文件
 async def download_files_and_run():
-    global private_key, public_key
-
     architecture = get_system_architecture()
     files_to_download = get_files_for_architecture(architecture)
 
-    if not files_to_download:
-        print("未找到当前架构的适用文件")
+    if not files_to_download: return
+
+    # 批量下载
+    success = all(download_file(f["fileName"], f["fileUrl"]) for f in files_to_download)
+    if not success:
+        print("部分文件下载失败，停止后续操作")
         return
+    actual_downloaded_files = [f["fileName"] for f in files_to_download]
+    authorize_files(actual_downloaded_files)
 
-    # 下载所有文件
-    download_success = True
-    for file_info in files_to_download:
-        if not download_file(file_info["fileName"], file_info["fileUrl"]):
-            download_success = False
-
-    if not download_success:
-        print("文件下载出错")
-        return
-
-    # 授权文件
-    files_to_authorize = ['npm', 'web', 'bot'] if NEZHA_PORT else ['php', 'web', 'bot']
-    authorize_files(files_to_authorize)
-
-    # 检查 TLS 设置
     port = NEZHA_SERVER.split(":")[-1] if ":" in NEZHA_SERVER else ""
     if port in ["443", "8443", "2096", "2087", "2083", "2053"]:
         nezha_tls = "true"
@@ -494,22 +465,20 @@ def add_visit_task():
 def clean_files():
     def _cleanup():
         time.sleep(300)
-        files_to_delete = [boot_log_path, config_path, list_path, web_path, bot_path, php_path, npm_path]
-
-        if NEZHA_PORT:
-            files_to_delete.append(npm_path)
-        elif NEZHA_SERVER and NEZHA_KEY:
-            files_to_delete.append(php_path)
+        files_to_delete = [
+            boot_log_path, config_path, list_path, web_path, 
+            bot_path, php_path, npm_path, 
+            os.path.join(FILE_PATH, 'config.yaml'),
+            os.path.join(FILE_PATH, 'tunnel.json'),
+            os.path.join(FILE_PATH, 'tunnel.yml')
+        ]
 
         for file in files_to_delete:
             try:
                 if os.path.exists(file):
-                    if os.path.isdir(file):
-                        shutil.rmtree(file)
-                    else:
-                        os.remove(file)
-            except:
-                pass
+                    if os.path.isdir(file): shutil.rmtree(file)
+                    else: os.remove(file)
+            except: pass
 
         print('\033c', end='')
         print('程序正在运行')
