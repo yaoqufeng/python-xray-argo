@@ -42,6 +42,6 @@ jobs:
 
       - name: 执行 Streamlit 唤醒脚本
         env:
-          STREAMLIT_APP_URL: ${{ secrets.STREAMLIT_APP_URL }}
+          STREAMLIT_APP_URL: ${{ vars.STREAMLIT_APP_URL }}
         run: |
           python keep/streamlit-keep.py
