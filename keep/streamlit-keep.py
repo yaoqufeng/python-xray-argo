@@ -7,7 +7,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 
-# 配置日志：使用更直观的格式
+# 配置日志
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -16,11 +16,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class StreamlitAppWaker:
-    """针对 Streamlit 应用的增强型自动唤醒工具"""
+    """针对 Streamlit 应用的自动唤醒工具"""
     
     APP_URL = os.environ.get("STREAMLIT_APP_URL", "")
-    INITIAL_WAIT_TIME = 15  
-    POST_CLICK_WAIT_TIME = 20  
+    INITIAL_WAIT_TIME = 20  # 初始等待，确保页面结构稳定
+    POST_CLICK_WAIT_TIME = 15  # 点击后的硬等待，确保异步请求完成
     
     # 定位器
     TEST_ID_SELECTOR = "button[data-testid='wakeup-button-owner']"
@@ -33,7 +33,7 @@ class StreamlitAppWaker:
     def setup_driver(self):
         logger.info("⚙️ 正在初始化浏览器配置...")
         chrome_options = Options()
-        chrome_options.page_load_strategy = 'eager' # 仅等待主 HTML 加载完成，不等待所有图片和追踪器
+        chrome_options.page_load_strategy = 'eager'
         if os.getenv('GITHUB_ACTIONS'):
             chrome_options.add_argument('--headless')
             chrome_options.add_argument('--no-sandbox')
@@ -53,74 +53,81 @@ class StreamlitAppWaker:
             raise
 
     def find_and_click_button(self, context="主页面"):
-        """按钮点击逻辑"""
+        """核心逻辑：结合 Selenium 定位与 JS 深度扫描"""
         logger.info(f"🔍 正在 [{context}] 搜索唤醒按钮...")
         
         button = None
-        # 策略 1: Test-ID
+        # 1. 尝试 Selenium 标准定位
         try:
             button = WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, self.TEST_ID_SELECTOR))
             )
-            strategy = "Test-ID"
         except:
-            # 策略 2: XPath
             try:
                 button = WebDriverWait(self.driver, 3).until(
                     EC.presence_of_element_located((By.XPATH, self.ROBUST_XPATH))
                 )
-                strategy = "Robust-XPath"
             except:
-                strategy = None
+                button = None
 
+        # 2. 如果标准定位找到，执行点击流程
         if button:
-            logger.info(f"🎯 命中按钮 (策略: {strategy})，准备执行点击...")
             try:
-                button.click()
-                logger.info(f"直接点击成功")
-            except Exception:
-                logger.warning(f"⚠️ 直接点击受阻，切换为 JavaScript 点击模式")
-                self.driver.execute_script("arguments[0].click();", button)
-            return True
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
+                time.sleep(2) 
+                logger.info(f"🎯 命中按钮，执行点击...")
+                try:
+                    button.click()
+                except:
+                    self.driver.execute_script("arguments[0].click();", button)
+                
+                logger.info(f"⏳ 点击已触发，预留后端响应时间 ({self.POST_CLICK_WAIT_TIME}s)...")
+                time.sleep(self.POST_CLICK_WAIT_TIME)
+                return True
+            except Exception as e:
+                logger.warning(f"⚠️ 点击尝试失败: {str(e)}")
 
-        # 策略 3: JS 深度扫描
-        logger.info(f"🧪 标准定位未果，尝试 JavaScript 深度扫描...")
-        js_click_script = """
+        # 3. 如果没找到或点击失败，尝试 JS 扫描并直接在 JS 中点击
+        js_logic = """
         var btn = document.querySelector("button[data-testid='wakeup-button-owner']");
-        if(!btn) btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Yes'));
-        if(btn) { btn.click(); return true; }
+        if(!btn) {
+            btn = Array.from(document.querySelectorAll('button')).find(b => 
+                b.innerText.includes('Yes') && b.innerText.includes('app')
+            );
+        }
+        if(btn) {
+            btn.click();
+            return true;
+        }
         return false;
         """
-        if self.driver.execute_script(js_click_script):
+        if self.driver.execute_script(js_logic):
             logger.info(f"⚡ JS 扫描成功触发点击")
+            time.sleep(self.POST_CLICK_WAIT_TIME)
             return True
         
         return False
 
     def check_app_status(self):
-        """验证验证环节：检查唤醒按钮是否消失"""
-        logger.info("🩺 正在验证唤醒结果（检查按钮是否依然存在）...")
-        self.driver.switch_to.default_content()
+        """双重验证：检查按钮消失且应用容器出现"""
+        logger.info("🩺 正在验证唤醒结果...")
         
-        def is_gone():
-            if self.driver.find_elements(By.CSS_SELECTOR, self.TEST_ID_SELECTOR): return False # 检查主页面
-            iframes = self.driver.find_elements(By.TAG_NAME, "iframe") # 检查 Iframe
-            for i in range(len(iframes)):
-                try:
-                    self.driver.switch_to.frame(i)
-                    found = self.driver.find_elements(By.CSS_SELECTOR, self.TEST_ID_SELECTOR)
-                    self.driver.switch_to.default_content()
-                    if found: return False
-                except:
-                    self.driver.switch_to.default_content()
-            return True
+        def is_app_running():
+            try:
+                return len(self.driver.find_elements(By.CSS_SELECTOR, "[data-testid='stAppViewContainer']")) > 0
+            except: return False
+        
+        def is_button_gone():
+            self.driver.switch_to.default_content()
+            btns = self.driver.find_elements(By.CSS_SELECTOR, self.TEST_ID_SELECTOR)
+            return len(btns) == 0
 
-        for attempt in range(1, 6):
-            if is_gone():
-                logger.info(f"✨ 验证通过：唤醒按钮已消失 (尝试第 {attempt} 次确认)")
+        for attempt in range(1, 4):
+            # 按钮消失或容器出现均视为成功
+            if is_button_gone() or is_app_running():
+                logger.info(f"✨ 验证通过 (第 {attempt} 次尝试确认)")
                 return True
-            time.sleep(1)
-        
+            time.sleep(3)
         return False
 
     def wakeup_app(self):
@@ -129,20 +136,18 @@ class StreamlitAppWaker:
         
         logger.info(f"🌐 正在访问目标地址: {self.APP_URL}")
         self.driver.get(self.APP_URL)
-        
         logger.info(f"⏳ 等待页面初步渲染 ({self.INITIAL_WAIT_TIME}s)...")
         time.sleep(self.INITIAL_WAIT_TIME)
 
         # 尝试主页面
-        if self.find_and_click_button("主页面"):
-            logger.info("✅ 唤醒指令已发出")
-        else:
-            # 尝试 Iframe
+        clicked = self.find_and_click_button("主页面")
+        
+        # 如果主页面没点到，尝试 Iframe
+        if not clicked:
             logger.info("📂 主页面未找到按钮，开始探测嵌套 Iframe...")
             iframes = self.driver.find_elements(By.TAG_NAME, "iframe")
             logger.info(f"🔍 检测到 {len(iframes)} 个 iframe")
             
-            clicked = False
             for i, frame in enumerate(iframes):
                 try:
                     self.driver.switch_to.frame(frame)
@@ -151,23 +156,24 @@ class StreamlitAppWaker:
                         break
                 finally:
                     self.driver.switch_to.default_content()
-            
-            if not clicked:
-                logger.info("🧐 搜索完毕：未找到任何唤醒按钮")
-                if self.check_app_status():
-                    return True, "应用已是唤醒状态，无需操作"
-                else:
-                    raise Exception("无法找到唤醒入口，且应用仍处于不可用状态")
 
-        # 结果确认
-        logger.info(f"🩺 正在最终验证唤醒结果...")
+        # 无论是否点到，如果页面已经是运行状态，直接返回成功
+        if not clicked:
+            logger.info("🧐 未找到唤醒按钮，正在检查应用是否已在线...")
+            if self.check_app_status():
+                return True, "应用已是唤醒状态，无需操作"
+            else:
+                raise Exception("无法找到唤醒入口，且应用仍处于冷启动/睡眠状态")
+
+        # 结果确认：刷新并深度验证
+        logger.info(f"🩺 正在刷新页面进行最终验证...")
+        self.driver.refresh()
+        time.sleep(10) # 刷新后的加载时间
+        
         if self.check_app_status():
             return True, "✅ 唤醒流程执行完毕，应用已恢复"
         else:
-            error_msg = f"❌ 唤醒动作已执行，但验证失败：按钮依然存在"
-            if os.getenv('GITHUB_ACTIONS'):
-                print(f"::error::Waker failed to verify app status. Button still present.")
-            raise Exception(error_msg)
+            raise Exception("❌ 唤醒动作已执行，但刷新页面后仍未检测到应用启动")
 
     def run(self):
         try:
