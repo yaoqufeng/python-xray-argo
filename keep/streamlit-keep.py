@@ -19,8 +19,8 @@ class StreamlitAppWaker:
     """针对 Streamlit 应用的自动唤醒工具"""
     
     APP_URL = os.environ.get("STREAMLIT_APP_URL", "")
-    INITIAL_WAIT_TIME = 20  # 初始等待，确保页面结构稳定
-    POST_CLICK_WAIT_TIME = 15  # 点击后的硬等待，确保异步请求完成
+    INITIAL_WAIT_TIME = 15  # 初始等待，确保页面结构稳定
+    CLICK_WAIT_TIME = 10  # 点击后的硬等待，确保异步请求完成
     
     # 定位器
     TEST_ID_SELECTOR = "button[data-testid='wakeup-button-owner']"
@@ -81,8 +81,8 @@ class StreamlitAppWaker:
                 except:
                     self.driver.execute_script("arguments[0].click();", button)
                 
-                logger.info(f"⏳ 点击已触发，预留后端响应时间 ({self.POST_CLICK_WAIT_TIME}s)...")
-                time.sleep(self.POST_CLICK_WAIT_TIME)
+                logger.info(f"⏳ 点击已触发，预留后端响应时间 ({self.CLICK_WAIT_TIME}s)...")
+                time.sleep(self.CLICK_WAIT_TIME)
                 return True
             except Exception as e:
                 logger.warning(f"⚠️ 点击尝试失败: {str(e)}")
@@ -103,7 +103,7 @@ class StreamlitAppWaker:
         """
         if self.driver.execute_script(js_logic):
             logger.info(f"⚡ JS 扫描成功触发点击")
-            time.sleep(self.POST_CLICK_WAIT_TIME)
+            time.sleep(self.CLICK_WAIT_TIME)
             return True
         
         return False
@@ -114,8 +114,12 @@ class StreamlitAppWaker:
         
         def is_app_running():
             try:
-                return len(self.driver.find_elements(By.CSS_SELECTOR, "[data-testid='stAppViewContainer']")) > 0
+                selectors = ["[data-testid='stAppViewContainer']", "[data-testid='stSidebar']"]
+                for selector in selectors:
+                    if len(self.driver.find_elements(By.CSS_SELECTOR, selector)) > 0:
+                        return True
             except: return False
+            return False
         
         def is_button_gone():
             self.driver.switch_to.default_content()
@@ -168,7 +172,7 @@ class StreamlitAppWaker:
         # 结果确认：刷新并深度验证
         logger.info(f"🩺 正在刷新页面进行最终验证...")
         self.driver.refresh()
-        time.sleep(10) # 刷新后的加载时间
+        time.sleep(self.CLICK_WAIT_TIME) # 刷新后的加载时间
         
         if self.check_app_status():
             return True, "✅ 唤醒流程执行完毕，应用已恢复"
